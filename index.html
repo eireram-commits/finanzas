@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finanzas Personales</title>
+<style>
+:root{
+  --bg:#f4f6f9;--card:#ffffff;--primary:#2f80ed;--primary-dark:#2566c7;--text:#333;
+}
+body{margin:0;padding:10px;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+h2{text-align:center}
+.card{background:var(--card);padding:12px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.08);margin-bottom:10px}
+form,.row{display:flex;flex-wrap:wrap;gap:6px}
+input,select,textarea{flex:1;padding:6px;border-radius:4px;border:1px solid #ccc;font-size:14px}
+button{padding:6px 12px;border:none;border-radius:4px;background:var(--primary);color:#fff;cursor:pointer}
+button:hover{background:var(--primary-dark)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:6px;border-bottom:1px solid #ddd}
+th{background:#eef2f7}
+.gasto{color:red}.ingreso{color:green}
+.resumen{display:flex;justify-content:space-around;font-weight:bold}
+</style>
+</head>
+<body>
+
+<h2>Finanzas Personales</h2>
+
+<div class="card row">
+<button onclick="login()">Conectar con Google Drive</button>
+<span id="estado"></span>
+</div>
+
+<div class="card resumen">
+<div>Ingresos: <span id="ingresos">$0.00</span></div>
+<div>Gastos: <span id="gastos">$0.00</span></div>
+<div>Saldo: <span id="saldo">$0.00</span></div>
+</div>
+
+<div class="card">
+<form id="form">
+<input type="date" id="fecha">
+<select id="tipo"><option value="gasto">Gasto</option><option value="ingreso">Ingreso</option></select>
+<select id="cuenta"></select>
+<select id="categoria"></select>
+<input id="concepto" placeholder="Concepto">
+<input type="number" id="monto" step="0.01" placeholder="$ Monto">
+<button>Agregar</button>
+</form>
+</div>
+
+<div class="card">
+<textarea id="sms" rows="3" placeholder="Pega aquí el SMS del banco"></textarea>
+<select id="cuentaSMS"></select>
+<button onclick="importarSMS()">Importar SMS</button>
+</div>
+
+<div class="card">
+<table>
+<thead><tr><th>Fecha</th><th>Cuenta</th><th>Categoría</th><th>Concepto</th><th>Monto</th></tr></thead>
+<tbody id="lista"></tbody>
+</table>
+</div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+const CLIENT_ID='162859926148-netq6m9s67jb2pits1lso11cdklk5oe.apps.googleusercontent.com';
+const SCOPES='https://www.googleapis.com/auth/drive.file';
+let token=null,fileId=null;
+let datos=[];
+let cuentas=new Set(['Principal','BPA Eire','BPA Gladis']);
+let categorias=new Set(['General']);
+
+function hoy(){return new Date().toISOString().split('T')[0];}
+fecha.value=hoy();
+
+function login(){
+  google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID,
+    scope:SCOPES,
+    callback:(r)=>{token=r.access_token;estado.textContent=' Conectado';cargar();}
+  }).requestAccessToken();
+}
+
+async function cargar(){
+  const r=await fetch('https://www.googleapis.com/drive/v3/files?q=name="finanzas.json"',{headers:{Authorization:'Bearer '+token}});
+  const j=await r.json();
+  if(j.files.length){fileId=j.files[0].id;const f=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{headers:{Authorization:'Bearer '+token}});datos=await f.json();}
+  sync();render();
+}
+
+async function guardar(){
+  const body=new Blob([JSON.stringify(datos)],{type:'application/json'});
+  if(!fileId){
+    const f=new FormData();
+    f.append('metadata',new Blob([JSON.stringify({name:'finanzas.json'})],{type:'application/json'}));
+    f.append('file',body);
+    const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',headers:{Authorization:'Bearer '+token},body:f});
+    fileId=(await r.json()).id;
+  }else{
+    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(datos)});
+  }
+}
+
+function sync(){
+  cuenta.innerHTML='';categoria.innerHTML='';
+  cuentas.forEach(c=>cuenta.append(new Option(c,c)));
+  categorias.forEach(c=>categoria.append(new Option(c,c)));
+  cuentaSMS.innerHTML=cuenta.innerHTML;
+}
+
+form.onsubmit=e=>{
+  e.preventDefault();
+  datos.push({fecha:fecha.value,cuenta:cuenta.value,categoria:categoria.value,concepto:concepto.value,monto:+monto.value,tipo:tipo.value});
+  guardar();render();form.reset();fecha.value=hoy();
+}
+
+function importarSMS(){
+  sms.value.split('|').forEach(b=>{
+    let p=b.trim().split(';');if(p.length<6)return;
+    let[f,s,op,m]=p;
+    datos.push({fecha:f.split('/').reverse().join('-'),cuenta:cuentaSMS.value,categoria:s||'Banco',concepto:s||'Banco',monto:+m,tipo:op==='CR'?'ingreso':'gasto'});
+  });
+  guardar();render();sms.value='';
+}
+
+function render(){
+  let ing=0,gas=0;
+  lista.innerHTML='';
+  datos.sort((a,b)=>b.fecha.localeCompare(a.fecha)).forEach(d=>{
+    lista.innerHTML+=`<tr><td>${d.fecha}</td><td>${d.cuenta}</td><td>${d.categoria}</td><td>${d.concepto}</td><td class="${d.tipo}">$${d.monto.toFixed(2)}</td></tr>`;
+    d.tipo==='ingreso'?ing+=d.monto:gas+=d.monto;
+  });
+  ingresos.textContent='$'+ing.toFixed(2);
+  gastos.textContent='$'+gas.toFixed(2);
+  saldo.textContent='$'+(ing-gas).toFixed(2);
+}
+</script>
+</body>
+</html>

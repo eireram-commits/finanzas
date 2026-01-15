@@ -1,59 +1,97 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Finanzas Personales</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Finanzas</title>
 <style>
 :root{
-  --bg:#f4f6f9;--card:#ffffff;--primary:#2f80ed;--primary-dark:#2566c7;--text:#333;
+  --bg:#f4f6f9;
+  --card:#ffffff;
+  --primary:#2f80ed;
+  --primary-dark:#2566c7;
+  --text:#333;
 }
-body{margin:0;padding:10px;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
-h2{text-align:center}
-.card{background:var(--card);padding:12px;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.08);margin-bottom:10px}
-form,.row{display:flex;flex-wrap:wrap;gap:6px}
-input,select,textarea{flex:1;padding:6px;border-radius:4px;border:1px solid #ccc;font-size:14px}
-button{padding:6px 12px;border:none;border-radius:4px;background:var(--primary);color:#fff;cursor:pointer}
+body{
+  font-family:Arial,Helvetica,sans-serif;
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+}
+.container{max-width:1100px;margin:auto;padding:10px}
+h1{text-align:center}
+.card{
+  background:var(--card);
+  padding:12px;
+  border-radius:8px;
+  box-shadow:0 2px 6px rgba(0,0,0,.08);
+  margin-bottom:12px;
+}
+form,.filtros{display:flex;gap:8px;flex-wrap:wrap}
+input,select,textarea{
+  padding:8px;
+  border-radius:6px;
+  border:1px solid #ccc;
+  flex:1 1 140px;
+}
+input::placeholder{color:#aaa}
+button{
+  padding:8px 14px;
+  border:none;
+  border-radius:6px;
+  background:var(--primary);
+  color:#fff;
+  cursor:pointer;
+}
 button:hover{background:var(--primary-dark)}
-table{width:100%;border-collapse:collapse;font-size:12px}
-th,td{padding:6px;border-bottom:1px solid #ddd}
-th{background:#eef2f7}
-.gasto{color:red}.ingreso{color:green}
+table{width:100%;border-collapse:collapse;font-size:13px;background:#fff}
+th,td{border-bottom:1px solid #e0e0e0;padding:6px}
+th{background:#eef2f7;text-align:left}
+.ingreso{color:green}
+.gasto{color:red}
 .resumen{display:flex;justify-content:space-around;font-weight:bold}
+canvas{max-width:100%}
 </style>
 </head>
 <body>
-
-<h2>Finanzas Personales</h2>
-
-<div class="card row">
-<button onclick="login()">Conectar con Google Drive</button>
-<span id="estado"></span>
-</div>
-
-<div class="card resumen">
-<div>Ingresos: <span id="ingresos">$0.00</span></div>
-<div>Gastos: <span id="gastos">$0.00</span></div>
-<div>Saldo: <span id="saldo">$0.00</span></div>
-</div>
+<div class="container">
+<h1>Finanzas</h1>
 
 <div class="card">
 <form id="form">
-<input type="date" id="fecha">
-<select id="tipo"><option value="gasto">Gasto</option><option value="ingreso">Ingreso</option></select>
-<select id="cuenta"></select>
-<select id="categoria"></select>
-<input id="concepto" placeholder="Concepto">
-<input type="number" id="monto" step="0.01" placeholder="$ Monto">
-<button>Agregar</button>
+  <input type="date" id="fecha" />
+  <select id="tipo"><option value="gasto">Gasto</option><option value="ingreso">Ingreso</option></select>
+  <select id="cuenta"></select>
+  <select id="categoria"></select>
+  <input id="concepto" placeholder="Concepto" list="listaConceptos" />
+  <datalist id="listaConceptos"></datalist>
+  <input type="number" id="monto" step="0.01" placeholder="$ Monto" />
+  <button>Agregar</button>
 </form>
 </div>
 
 <div class="card">
-<textarea id="sms" rows="3" placeholder="Pega aquí el SMS del banco"></textarea>
+<h3>Importar SMS</h3>
 <select id="cuentaSMS"></select>
-<button onclick="importarSMS()">Importar SMS</button>
+<textarea id="sms" rows="4" placeholder="Pega aquí los SMS"></textarea>
+<button onclick="importarSMS()">Importar</button>
 </div>
+
+<div class="card">
+<h3>Filtros</h3>
+<div class="filtros">
+  <input type="month" id="filtroMes" />
+  <select id="filtroCuenta"></select>
+  <select id="filtroCategoria"></select>
+  <button onclick="aplicarFiltros()">Aplicar</button>
+  <button onclick="mostrarGrafico()">Gráfico</button>
+  <button onclick="exportarCSV()">Exportar CSV</button>
+</div>
+</div>
+
+<div class="card resumen" id="resumen"></div>
+
+<div class="card"><canvas id="grafico"></canvas></div>
 
 <div class="card">
 <table>
@@ -61,80 +99,63 @@ th{background:#eef2f7}
 <tbody id="lista"></tbody>
 </table>
 </div>
+</div>
 
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-const CLIENT_ID='162859926148-netq6m9s67jb2pits1lso11cdklk5oe.apps.googleusercontent.com';
-const SCOPES='https://www.googleapis.com/auth/drive.file';
-let token=null,fileId=null;
-let datos=[];
+const hoy=()=>new Date().toISOString().split('T')[0];
+let datos=JSON.parse(localStorage.getItem('finanzas'))||[];
+let vista=[...datos];
 let cuentas=new Set(['Principal','BPA Eire','BPA Gladis']);
 let categorias=new Set(['General']);
+let conceptos=new Set();
 
-function hoy(){return new Date().toISOString().split('T')[0];}
-fecha.value=hoy();
-
-function login(){
-  google.accounts.oauth2.initTokenClient({
-    client_id:CLIENT_ID,
-    scope:SCOPES,
-    callback:(r)=>{token=r.access_token;estado.textContent=' Conectado';cargar();}
-  }).requestAccessToken();
-}
-
-async function cargar(){
-  const r=await fetch('https://www.googleapis.com/drive/v3/files?q=name="finanzas.json"',{headers:{Authorization:'Bearer '+token}});
-  const j=await r.json();
-  if(j.files.length){fileId=j.files[0].id;const f=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{headers:{Authorization:'Bearer '+token}});datos=await f.json();}
-  sync();render();
-}
-
-async function guardar(){
-  const body=new Blob([JSON.stringify(datos)],{type:'application/json'});
-  if(!fileId){
-    const f=new FormData();
-    f.append('metadata',new Blob([JSON.stringify({name:'finanzas.json'})],{type:'application/json'}));
-    f.append('file',body);
-    const r=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{method:'POST',headers:{Authorization:'Bearer '+token},body:f});
-    fileId=(await r.json()).id;
-  }else{
-    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(datos)});
-  }
+function llenarSelect(id,set,editable,none){
+  const s=document.getElementById(id);s.innerHTML='';
+  if(none){const o=document.createElement('option');o.value='';o.textContent='(ninguno)';s.appendChild(o)}
+  set.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;s.appendChild(o)});
+  if(editable){const o=document.createElement('option');o.value='__new';o.textContent='+ Agregar…';s.appendChild(o)}
+  s.onchange=()=>{if(s.value==='__new'){const n=prompt('Nuevo valor');if(n){set.add(n);sync();s.value=n}else s.value=''}}
 }
 
 function sync(){
-  cuenta.innerHTML='';categoria.innerHTML='';
-  cuentas.forEach(c=>cuenta.append(new Option(c,c)));
-  categorias.forEach(c=>categoria.append(new Option(c,c)));
-  cuentaSMS.innerHTML=cuenta.innerHTML;
+  datos.forEach(d=>{cuentas.add(d.cuenta);categorias.add(d.categoria);conceptos.add(d.concepto)});
+  llenarSelect('cuenta',cuentas,true);
+  llenarSelect('categoria',categorias,true);
+  llenarSelect('cuentaSMS',cuentas,false);
+  llenarSelect('filtroCuenta',cuentas,false,true);
+  llenarSelect('filtroCategoria',categorias,false,true);
+  const dl=document.getElementById('listaConceptos');dl.innerHTML='';conceptos.forEach(c=>{const o=document.createElement('option');o.value=c;dl.appendChild(o)});
+}
+
+function guardar(){localStorage.setItem('finanzas',JSON.stringify(datos))}
+
+function render(){
+  const l=document.getElementById('lista');l.innerHTML='';
+  vista.sort((a,b)=>b.fecha.localeCompare(a.fecha)).forEach(d=>{
+    l.innerHTML+=`<tr><td>${d.fecha}</td><td>${d.cuenta}</td><td>${d.categoria}</td><td>${d.concepto}</td><td class="${d.tipo}">$ ${d.monto.toFixed(2)}</td></tr>`
+  });
+  resumen();
+}
+
+function resumen(){
+  let ing=0,gas=0;vista.forEach(d=>d.tipo==='ingreso'?ing+=d.monto:gas+=d.monto);
+  document.getElementById('resumen').innerHTML=`Ingresos: $${ing.toFixed(2)} | Gastos: $${gas.toFixed(2)} | Saldo: $${(ing-gas).toFixed(2)}`
 }
 
 form.onsubmit=e=>{
   e.preventDefault();
   datos.push({fecha:fecha.value,cuenta:cuenta.value,categoria:categoria.value,concepto:concepto.value,monto:+monto.value,tipo:tipo.value});
-  guardar();render();form.reset();fecha.value=hoy();
+  vista=[...datos];guardar();sync();render();form.reset();fecha.value=hoy();tipo.value='gasto'
 }
 
-function importarSMS(){
-  sms.value.split('|').forEach(b=>{
-    let p=b.trim().split(';');if(p.length<6)return;
-    let[f,s,op,m]=p;
-    datos.push({fecha:f.split('/').reverse().join('-'),cuenta:cuentaSMS.value,categoria:s||'Banco',concepto:s||'Banco',monto:+m,tipo:op==='CR'?'ingreso':'gasto'});
-  });
-  guardar();render();sms.value='';
-}
+function aplicarFiltros(){vista=datos.filter(d=>(!filtroMes.value||d.fecha.startsWith(filtroMes.value))&&(!filtroCuenta.value||d.cuenta===filtroCuenta.value)&&(!filtroCategoria.value||d.categoria===filtroCategoria.value)));render()}
 
-function render(){
-  let ing=0,gas=0;
-  lista.innerHTML='';
-  datos.sort((a,b)=>b.fecha.localeCompare(a.fecha)).forEach(d=>{
-    lista.innerHTML+=`<tr><td>${d.fecha}</td><td>${d.cuenta}</td><td>${d.categoria}</td><td>${d.concepto}</td><td class="${d.tipo}">$${d.monto.toFixed(2)}</td></tr>`;
-    d.tipo==='ingreso'?ing+=d.monto:gas+=d.monto;
-  });
-  ingresos.textContent='$'+ing.toFixed(2);
-  gastos.textContent='$'+gas.toFixed(2);
-  saldo.textContent='$'+(ing-gas).toFixed(2);
-}
+function importarSMS(){sms.value.split('|').forEach(b=>{const p=b.trim().split(';');if(p.length<6)return;const[f,s,op,m,,id]=p;datos.push({fecha:f.split('/').reverse().join('-'),cuenta:cuentaSMS.value,categoria:s||'Banco',concepto:s||'Banco',monto:+m,tipo:op==='CR'?'ingreso':'gasto'})});guardar();sync();vista=[...datos];render();sms.value=''}
+
+let chart;function mostrarGrafico(){if(chart)chart.destroy();const ctx=document.getElementById('grafico');const porMes={};vista.forEach(d=>{const m=d.fecha.slice(0,7);porMes[m]=(porMes[m]||0)+(d.tipo==='ingreso'?d.monto:-d.monto)});chart=new Chart(ctx,{type:'line',data:{labels:Object.keys(porMes),datasets:[{label:'Balance',data:Object.values(porMes)}]}})}
+
+fecha.value=hoy();sync();render();
 </script>
 </body>
 </html>
